@@ -20,12 +20,7 @@ const ContextProvider = ({ children }) => {
   const connectionRef = useRef();
   const [users, setUsers] = useState([]);
   useEffect(() => {
-    // navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-    //   .then((currentStream) => {
-    //     setStream(currentStream);
 
-    //     myVideo.current.srcObject = currentStream;
-    //   });
     socket.on('me', (id) => {
       setMe(id)
     });
@@ -39,6 +34,7 @@ const ContextProvider = ({ children }) => {
     socket.on('callUser', ({ from, name: callerName, signal }) => {
       setCall({ isReceivingCall: true, from, name: callerName, signal });
     });
+
     socket.on("callEnded", () => {
        setCallEnded(true)
 
@@ -51,59 +47,61 @@ const ContextProvider = ({ children }) => {
       if (connectionRef.current) {
           connectionRef.current.destroy()
       }
-       window.location.reload()
+        window.location.pathname = '/'
   })
+  socket.on("userDisconnected", ({ id, name }) => {
+    alert(`${name} has disconnected from the call.`);
+    setTimeout(() => {window.location.pathname = '/'}, 5000);
+    // หรือคุณอาจต้องการจัดการ UI อื่น ๆ ที่นี่
+});
+return () => {
+        socket.off("allUsers");
+        socket.off("callUser");
+        socket.off("callEnded");
+        socket.off("userDisconnected");
+};
   }, []);
   const callUser = (id) => {
     const peer = new Peer({ initiator: true, trickle: false, stream });
 
     peer.on('signal', (data) => {
-      socket.emit('callUser', { userToCall: id, signalData: data, from: me, name });
+        socket.emit('callUser', { userToCall: id, signalData: data, from: me, name, }); // สร้าง room โดยใช้ ID ของผู้โทรและผู้รับ
     });
 
     peer.on('stream', (currentStream) => {
-      console.log('Received user video stream:', currentStream);
-      if (userVideo.current) {
-        userVideo.current.srcObject = currentStream;
-      } else {
-        console.error('userVideo is not initialized.');
-      }
+        console.log('Received user video stream:', currentStream);
+        if (userVideo.current) {
+            userVideo.current.srcObject = currentStream;
+        }
     });
 
     socket.on('callAccepted', (signal) => {
-      setCallAccepted(true);
-      // const newsingal = signal.signal
-      // const callerName = signal.name
-      setCallName(signal.name)
-      // setCall({ isReceivingCall: false, name: callerName, newsingal });
-      peer.signal(signal.signal);
-      console.log('Call accepted, signaling peer:', signal);
-      
+        setCallAccepted(true);
+        setCallName(signal.name);
+        peer.signal(signal.signal);
     });
-    socket.emit("username", name, me)
+
     connectionRef.current = peer;
-  };
-  const answerCall = () => {
+};
 
+const answerCall = () => {
+  const peer = new Peer({ initiator: false, trickle: false, stream });
 
-    const peer = new Peer({ initiator: false, trickle: false, stream });
+  peer.on('signal', (data) => {
+      socket.emit('answerCall', { signal: data, to: call.from, name, from: me  }); // ใช้ room เพื่อการตอบรับ
+  });
 
-    peer.on('signal', (data) => {
-      socket.emit('answerCall', { signal: data, to: call.from ,name: name});
-    });
-
-    peer.on('stream', (currentStream) => {
-      console.log('Received user video stream:', currentStream);
+  peer.on('stream', (currentStream) => {
       if (userVideo.current) {
-        userVideo.current.srcObject = currentStream;
+          userVideo.current.srcObject = currentStream;
       }
-    });
+  });
 
-    peer.signal(call.signal);
-    console.log('Answering call, signaling peer with signal:', call.signal);
-    connectionRef.current = peer;
-    setCallAccepted(true);
-  };
+  peer.signal(call.signal);
+  connectionRef.current = peer;
+  setCallAccepted(true);
+};
+
 
   
 
@@ -111,7 +109,6 @@ const ContextProvider = ({ children }) => {
     setCallEnded(true)
     
     // Stop the local stream
-    // stream.getTracks().forEach(track => track.stop())
     if (userVideo.current) {
       userVideo.current.srcObject = null;  // Remove the remote video stream
   }
@@ -119,9 +116,8 @@ const ContextProvider = ({ children }) => {
     if (connectionRef.current) {
         connectionRef.current.destroy()
     }
-    socket.emit("callEnded")
-    // Optional: reload the page to reset the UI
-     window.location.reload()
+    socket.emit("callEnded",me)
+     window.location.pathname = '/'
 }
   const setusername =()=>{
     console.log('====================================');
